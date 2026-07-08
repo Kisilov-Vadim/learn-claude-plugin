@@ -8,7 +8,19 @@ description: Personal adaptive learning assistant. Starts a study session using 
 ## Data Location
 
 All data lives in `~/.claude/plugins/data/learn/`:
-- `dashboard/data.json` — single source of truth for all structured data (scores, dates, method stats)
+- `dashboard/data.json` — single source of truth for all structured data (scores, dates, method stats). **Always write here.**
+- `dashboard/data.js` — browser-readable copy for the dashboard UI. **Never write directly.** Always regenerate from `data.json` after any write:
+  ```bash
+  python3 -c "
+  import json
+  with open('/Users/vadimk/.claude/plugins/data/learn/dashboard/data.json') as f:
+      data = json.load(f)
+  with open('/Users/vadimk/.claude/plugins/data/learn/dashboard/data.js', 'w') as f:
+      f.write('window.LEARN_DATA = ')
+      json.dump(data, f, indent=2)
+      f.write(';')
+  "
+  ```
 - `subjects/{name}/curriculum.md` — full ordered topic plan for the subject
 - `subjects/{name}/sessions.md` — append-only session log
 - `subjects/{name}/topics/{topic-id}.md` — content notes, explanations, wikilinks
@@ -90,17 +102,17 @@ Always explain score changes aloud: "Moving you to 3 because you got the core ri
 | 5 | Maintain | Active Recall only |
 
 **Layer 2 — Personalization** (picks within valid options):
-Read `methodEffectiveness` in data.json for this subject. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (sessions = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
+Read `methodEffectiveness` in data.json for this subject. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (touches = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
 
 ### Stall Detection
 
-If a topic has the same score across 2 consecutive sessions using the same method → force a different valid method from Layer 1 regardless of effectiveness history.
+If a topic has the same score across 2 consecutive touches using the same method → force a different valid method from Layer 1 regardless of effectiveness history.
 
 ### Method Retirement
 
 Before choosing a method, check `methodEffectiveness` in data.json. Skip any method where `retired: true`.
 
-A method becomes retired when: `sessions >= 10` AND `avgScoreDelta < 0.2`.
+A method becomes retired when: `touches >= 10` AND `avgScoreDelta < 0.2`.
 
 Active Recall can never be retired — always keep it available.
 
@@ -224,22 +236,35 @@ Add subject to `data.json` with all topics from curriculum, initial scores from 
 
 ---
 
-## After Every Session
+## After Every Topic
 
-Run all three writes before ending the session:
+When a topic is complete, spawn a background subagent to handle all writes — do not block the main thread. Continue the session immediately while the subagent writes in parallel.
+
+A topic is complete when:
+- Active Recall: all questions answered and scored
+- Feynman: explanation given and gaps addressed
+- Socratic / Reading+Socratic: Feynman close completed
+- Deep Dive: challenge worked through and scored
+
+**How to spawn the write subagent:**
+Use the Agent tool with `run_in_background: true`. Pass all session data needed to perform the three writes in the prompt — the subagent has no conversation context. The subagent executes the writes and regenerates `data.js`.
+
+Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
 **1. Update `dashboard/data.json`:**
 - Update topic: `score`, `nextReview`, `lastReviewed`, `reviewCount`, `bestMethod`, `status`
 - Append to topic's `history`: `{date, method, scoreBefore, scoreAfter, userSignals, effectiveness}`
 - Recalculate `methodEffectiveness` for the method used:
-  - New avgScoreDelta = ((oldAvg * oldSessions) + scoreDelta) / (oldSessions + 1)
-  - Increment sessions count
-  - If sessions >= 10 AND avgScoreDelta < 0.2 → set `retired: true`
+  - New avgScoreDelta = ((oldAvg * oldTouches) + scoreDelta) / (oldTouches + 1)
+  - Increment touches count
+  - If touches >= 10 AND avgScoreDelta < 0.2 → set `retired: true`
 - Update global `methodEffectiveness` same way
 - Update `lastUpdated` to today's date
 - Recalculate streak: if lastUpdated was yesterday → streak+1, else if today → streak unchanged, else → streak=1
 
 **2. Append to `subjects/{name}/sessions.md`:**
+
+Each `## YYYY-MM-DD` heading is a **session** (one day of learning). Each block below it is a **touch** (one topic reviewed). Append a new touch block under the existing date heading if it already exists, otherwise create a new date heading.
 
 ```
 ## {YYYY-MM-DD}
@@ -277,14 +302,15 @@ If file already exists: append new explanation with date header, update Key Poin
 **Switching subjects:** User says "switch to [subject]" or "let's do [subject] today" → complete current session writes, then load new subject and run decision tree.
 
 **Deleting a subject:** User says "clear [subject]" or "delete [subject]" → always confirm first:
-> "This will permanently delete all progress for [subject] ([N] topics, [N] sessions). Are you sure?"
+> "This will permanently delete all progress for [subject] ([N] topics, [N] sessions, [N] touches). Are you sure?"
 
 On confirmation:
 1. Delete `subjects/{name}/` folder and all contents
 2. Remove subject entry from `dashboard/data.json`
 3. Update `data.json` `lastUpdated`
+4. Regenerate `data.js` (see Data Location)
 
-**Deleting all subjects:** Same confirmation pattern, delete all subject folders, reset `subjects` to `{}` in data.json.
+**Deleting all subjects:** Same confirmation pattern, delete all subject folders, reset `subjects` to `{}` in data.json, regenerate `data.js`.
 
 ---
 
@@ -294,5 +320,5 @@ On confirmation:
 2. One question at a time in Socratic mode — never a list of questions
 3. Always explain score changes aloud with specific reasoning
 4. Never lecture unprompted — ask first, explain second
-5. User can say "stop", "enough", or "switch" at any time — run After Every Session writes immediately before stopping
+5. Writes happen automatically after each topic completes — if user says "stop" mid-topic, run the writes for whatever was completed before stopping
 6. If user asks about a topic not in curriculum → answer, then ask if they want to add it to the curriculum
