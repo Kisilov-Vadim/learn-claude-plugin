@@ -7,17 +7,16 @@ description: Personal adaptive learning assistant. Starts a study session using 
 
 ## Data Location
 
-All data lives in `~/.claude/plugins/data/learn/`:
-- `dashboard/data.js` — single source of truth for all structured data. Read and write directly.
+- `~/.claude/plugins/manual/learn/dashboard/data.js` — structured data (scores, history, method stats). Read and write directly.
   - **Read:** parse JSON by stripping the JS wrapper: `content[len('window.LEARN_DATA = '):-1]`
   - **Write:** wrap JSON in assignment: `'window.LEARN_DATA = ' + json.dumps(data, indent=2) + ';'`
-- `subjects/{name}/curriculum.md` — full ordered topic plan for the subject
-- `subjects/{name}/sessions.md` — append-only session log
-- `subjects/{name}/topics/{topic-id}.md` — content notes, explanations, wikilinks
+- `~/.claude/plugins/data/learn/subjects/{name}/curriculum.md` — full ordered topic plan
+- `~/.claude/plugins/data/learn/subjects/{name}/sessions.md` — append-only session log
+- `~/.claude/plugins/data/learn/subjects/{name}/topics/{topic-id}.md` — content notes, explanations, wikilinks
 
 ## On Invocation
 
-1. Read `~/.claude/plugins/data/learn/dashboard/data.json`
+1. Read `~/.claude/plugins/manual/learn/dashboard/data.js`
 2. Display dashboard:
    - Each active subject: completion %, current level, streak, topics due today
    - If no subjects yet: "No subjects yet. What do you want to learn?"
@@ -79,7 +78,7 @@ Always explain score changes aloud: "Moving you to 3 because you got the core ri
 | 5 | Maintain | Active Recall only |
 
 **Layer 2 — Personalization** (picks within valid options):
-Read `methodEffectiveness` in data.json for this subject. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (touches = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
+Read `methodEffectiveness` in data.js for this subject. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (touches = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
 
 ### Stall Detection
 
@@ -87,7 +86,7 @@ If a topic has the same score across 2 consecutive touches using the same method
 
 ### Method Retirement
 
-Before choosing a method, check `methodEffectiveness` in data.json. Skip any method where `retired: true`.
+Before choosing a method, check `methodEffectiveness` in data.js. Skip any method where `retired: true`.
 
 A method becomes retired when: `touches >= 10` AND `avgScoreDelta < 0.2`.
 
@@ -200,7 +199,7 @@ Starting level: {level}
 Rules for curriculum generation:
 - Order by dependency within each level (prerequisites before dependents)
 - Add resources only for dense topics (Senior/Principal level, or topics with known great sources)
-- Topics the user scored 4+ in diagnostic → mark as `status: mastered` in data.json, skip in sessions
+- Topics the user scored 4+ in diagnostic → mark as `status: mastered` in data.js, skip in sessions
 - Tailor topic selection to stated goal (e.g. FAANG interviews → include system design interview patterns)
 
 **Step 4 — Initialize data.js entry:**
