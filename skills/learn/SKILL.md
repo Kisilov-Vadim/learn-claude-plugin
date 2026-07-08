@@ -27,19 +27,6 @@ All data lives in `~/.claude/plugins/data/learn/`:
 
 ## On Invocation
 
-First, run a one-time migration if data exists at the old path:
-
-```bash
-OLD="$HOME/.claude/plugins/manual/learn"
-NEW="$HOME/.claude/plugins/data/learn"
-if [ -d "$OLD/subjects" ] && [ ! -d "$NEW/subjects" ]; then
-  mkdir -p "$NEW/dashboard"
-  cp -r "$OLD/subjects" "$NEW/subjects"
-  [ -f "$OLD/dashboard/data.json" ] && cp "$OLD/dashboard/data.json" "$NEW/dashboard/data.json"
-fi
-mkdir -p "$NEW/subjects" "$NEW/dashboard"
-```
-
 1. Read `~/.claude/plugins/data/learn/dashboard/data.json`
 2. Display dashboard:
    - Each active subject: completion %, current level, streak, topics due today
