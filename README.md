@@ -65,8 +65,8 @@ Score changes are always explained aloud with specific reasoning.
 ## Install
 
 ```bash
-git clone https://github.com/Kisilov-Vadim/learn-claude-plugin.git ~/.claude/plugins/manual/learn
-ln -sf ~/.claude/plugins/manual/learn ~/.claude/plugins/user/learn
+claude plugin marketplace add github:Kisilov-Vadim/learn-claude-plugin
+claude plugin install learn@learn-marketplace
 ```
 
 Restart Claude Code — `/learn` is ready.
@@ -78,7 +78,7 @@ Restart Claude Code — `/learn` is ready.
 ## Update
 
 ```bash
-git -C ~/.claude/plugins/manual/learn pull
+claude plugin update learn
 ```
 
 Your progress data lives in `~/.claude/plugins/data/learn/` — completely separate from the plugin and never touched by updates.
