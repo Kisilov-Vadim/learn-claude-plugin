@@ -13,7 +13,7 @@
       "name": "learn",
       "source": {
         "source": "url",
-        "url": "https://github.com/YOUR_USERNAME/learn-claude-plugin.git"
+        "url": "https://github.com/Kisilov-Vadim/learn-claude-plugin.git"
       },
       "description": "Personal adaptive learning system with spaced repetition and 5 teaching methods.",
       "version": "1.0.0",
