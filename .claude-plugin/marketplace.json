@@ -1,0 +1,23 @@
+{
+  "name": "learn-marketplace",
+  "owner": {
+    "name": "Vadim Kisilov",
+    "email": "vadimk@wix.com"
+  },
+  "metadata": {
+    "description": "Personal adaptive learning system for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "learn",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/YOUR_USERNAME/learn-claude-plugin.git"
+      },
+      "description": "Personal adaptive learning system with spaced repetition and 5 teaching methods.",
+      "version": "1.0.0",
+      "strict": true
+    }
+  ]
+}
