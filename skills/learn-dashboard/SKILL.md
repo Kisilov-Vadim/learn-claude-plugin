@@ -5,23 +5,21 @@ description: Opens the learning progress dashboard in the browser. Shows subject
 
 # /learn-dashboard
 
-## Step 1 — Install dashboard files
+## Step 1 — Link data file
 
-Copy the dashboard source files from the plugin to the data directory if not already present:
+Symlink the user's data file into the dashboard source directory so the dashboard can read it:
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/manual/learn/dashboard"
-DATA_DIR="$HOME/.claude/plugins/data/learn/dashboard"
-mkdir -p "$DATA_DIR"
-for f in index.html app.js helpers.js styles.css; do
-  cp "$PLUGIN_DIR/$f" "$DATA_DIR/$f"
-done
+PLUGIN_DASH="$HOME/.claude/plugins/manual/learn/dashboard"
+DATA_JS="$HOME/.claude/plugins/data/learn/dashboard/data.js"
+mkdir -p "$(dirname $DATA_JS)"
+ln -sf "$DATA_JS" "$PLUGIN_DASH/data.js"
 ```
 
 ## Step 2 — Open in browser
 
 ```bash
-open ~/.claude/plugins/data/learn/dashboard/index.html
+open "$HOME/.claude/plugins/manual/learn/dashboard/index.html"
 ```
 
 If `data.js` does not exist in the data directory yet:
