@@ -8,19 +8,9 @@ description: Personal adaptive learning assistant. Starts a study session using 
 ## Data Location
 
 All data lives in `~/.claude/plugins/data/learn/`:
-- `dashboard/data.json` — single source of truth for all structured data (scores, dates, method stats). **Always write here.**
-- `dashboard/data.js` — browser-readable copy for the dashboard UI. **Never write directly.** Always regenerate from `data.json` after any write:
-  ```bash
-  python3 -c "
-  import json
-  with open('/Users/vadimk/.claude/plugins/data/learn/dashboard/data.json') as f:
-      data = json.load(f)
-  with open('/Users/vadimk/.claude/plugins/data/learn/dashboard/data.js', 'w') as f:
-      f.write('window.LEARN_DATA = ')
-      json.dump(data, f, indent=2)
-      f.write(';')
-  "
-  ```
+- `dashboard/data.js` — single source of truth for all structured data. Read and write directly.
+  - **Read:** parse JSON by stripping the JS wrapper: `content[len('window.LEARN_DATA = '):-1]`
+  - **Write:** wrap JSON in assignment: `'window.LEARN_DATA = ' + json.dumps(data, indent=2) + ';'`
 - `subjects/{name}/curriculum.md` — full ordered topic plan for the subject
 - `subjects/{name}/sessions.md` — append-only session log
 - `subjects/{name}/topics/{topic-id}.md` — content notes, explanations, wikilinks
@@ -147,7 +137,7 @@ Ask 3–5 questions with no hints, no context. User answers from memory only.
 
 ### Method: Feynman (score 2, 3, 4)
 
-"Explain [topic] to me as if you're teaching a junior developer who has never heard of it."
+"Explain [topic] to me as if you're teaching someone who has never heard of it."
 
 - After explanation: name exactly what was solid, what gap appeared, what was missing entirely.
 - If explanation was vague: "You said [vague phrase] — can you be more specific about what that means technically?"
@@ -157,12 +147,9 @@ Ask 3–5 questions with no hints, no context. User answers from memory only.
 
 ### Method: Deep Dive (score 4)
 
-Give a design or implementation challenge. Guide through it Socratically — never give answers, only ask questions.
+Give a design or implementation challenge relevant to the subject. Guide through it Socratically — never give answers, only ask questions.
 
-Example challenges:
-- "Design a distributed rate limiter that handles 50k req/s across 5 servers. Walk me through your approach."
-- "You need to cache 10M user sessions. How do you design the cache layer?"
-- "Your database is getting 100k writes/minute. What breaks first and how do you fix it?"
+The challenge should require applying multiple concepts from the curriculum together, expose tradeoffs, and have no single correct answer. Tailor it to the topic's score level and the subject's stated goal.
 
 Ask one Socratic question at a time. Challenge assumptions. Ask about failure modes and tradeoffs.
 
@@ -179,11 +166,11 @@ When user adds a new subject:
 **Step 2 — Diagnostic conversation (10–15 min):**
 Sample 2–3 key topics from each level at or below the stated level. Ask reasoning questions — not "do you know X?" but questions that require applying knowledge.
 
-Example for Junior system design: "If your API is getting 10x traffic, what's the first thing you'd add and why?"
+Example question for a Junior-level topic: ask something that requires applying the concept, not just recalling a definition.
 
 Do this conversationally — it should feel like a technical chat, not an exam. Silently track scores. (use the same 0–5 scale: 0=never heard of it, 2=partial knowledge, 4=solid understanding)
 
-At the end, summarize: "Based on our conversation: load balancing and caching → score 4 (solid). Database indexing → score 2 (needs work). We'll start from there."
+At the end, summarize: "Based on our conversation: [topic A] → score 4 (solid). [topic B] → score 2 (needs work). We'll start from there."
 
 **Step 3 — Generate curriculum:**
 Write `~/.claude/plugins/data/learn/subjects/{name}/curriculum.md` with the full skeleton plan:
@@ -216,8 +203,8 @@ Rules for curriculum generation:
 - Topics the user scored 4+ in diagnostic → mark as `status: mastered` in data.json, skip in sessions
 - Tailor topic selection to stated goal (e.g. FAANG interviews → include system design interview patterns)
 
-**Step 4 — Initialize data.json entry:**
-Add subject to `data.json` with all topics from curriculum, initial scores from diagnostic, `methodEffectiveness` all zeroed out, `streak: 0`, `lastUpdated: ""`
+**Step 4 — Initialize data.js entry:**
+Add subject to `data.js` with all topics from curriculum, initial scores from diagnostic, `methodEffectiveness` all zeroed out, `streak: 0`, `lastUpdated: ""`
 
 **Step 5 — Start first session immediately.**
 
@@ -234,11 +221,11 @@ A topic is complete when:
 - Deep Dive: challenge worked through and scored
 
 **How to spawn the write subagent:**
-Use the Agent tool with `run_in_background: true`. Pass all session data needed to perform the three writes in the prompt — the subagent has no conversation context. The subagent executes the writes and regenerates `data.js`.
+Use the Agent tool with `run_in_background: true`. Pass all session data needed to perform the three writes in the prompt — the subagent has no conversation context.
 
 Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
-**1. Update `dashboard/data.json`:**
+**1. Update `dashboard/data.js`:**
 - Update topic: `score`, `nextReview`, `lastReviewed`, `reviewCount`, `bestMethod`, `status`
 - Append to topic's `history`: `{date, method, scoreBefore, scoreAfter, userSignals, effectiveness}`
 - Recalculate `methodEffectiveness` for the method used:
@@ -262,7 +249,6 @@ Each `## YYYY-MM-DD` heading is a **session** (one day of learning). Each block 
 **Next review:** {date}
 **User signals:** {what they got right, what gap appeared}
 **Method effectiveness:** {high / medium / low}
-**Score range:** {0-2 / 2-3 / 3-4 / 4-5}
 ```
 
 **3. Update `subjects/{name}/topics/{topic-id}.md`:**
@@ -293,11 +279,9 @@ If file already exists: append new explanation with date header, update Key Poin
 
 On confirmation:
 1. Delete `subjects/{name}/` folder and all contents
-2. Remove subject entry from `dashboard/data.json`
-3. Update `data.json` `lastUpdated`
-4. Regenerate `data.js` (see Data Location)
+2. Remove subject entry from `dashboard/data.js` and update `lastUpdated`
 
-**Deleting all subjects:** Same confirmation pattern, delete all subject folders, reset `subjects` to `{}` in data.json, regenerate `data.js`.
+**Deleting all subjects:** Same confirmation pattern, delete all subject folders, reset `subjects` to `{}` in `data.js`.
 
 ---
 

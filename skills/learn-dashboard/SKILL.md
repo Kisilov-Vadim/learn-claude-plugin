@@ -12,4 +12,4 @@ open ~/.claude/plugins/data/learn/dashboard/index.html
 ```
 
 If the file does not exist yet:
-> "Dashboard not built yet. The dashboard HTML is created as part of Plan 2. Run /learn to use the text-based dashboard in the meantime."
+> "Dashboard not found. Run /learn to start a session first — the dashboard file is created automatically on first use."

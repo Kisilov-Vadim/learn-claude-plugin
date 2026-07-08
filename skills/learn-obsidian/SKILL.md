@@ -76,4 +76,4 @@ Tell the user:
 > - Press `Cmd+Shift+G` to open the **Graph view** — see how your topics connect
 > - Click any `[[wikilink]]` inside a topic file to jump to related topics
 > - Open `sessions.md` in any subject to see your full touch history (entries grouped under `## YYYY-MM-DD` headings form a session)
-> - The vault updates automatically after every `/learn` session — no manual steps needed"
+> - The vault updates automatically after every `/learn` invocation — no manual steps needed"
