@@ -147,8 +147,8 @@ function renderProgress(subject, subjectKey) {
   const dueToday = getTopicsDueToday(subject, today);
   const levelOrder = ['beginner', 'junior', 'middle', 'senior', 'principal'];
   const currentLevel = levelOrder.find(l => {
-    const lvl = subject.levels[l];
-    return lvl && lvl.mastered < lvl.total;
+    const topicsInLevel = subject.topics.filter(t => t.level === l);
+    return topicsInLevel.length > 0 && topicsInLevel.some(t => t.score < 4);
   }) || levelOrder[levelOrder.length - 1];
 
   let html = `
@@ -176,11 +176,13 @@ function renderProgress(subject, subjectKey) {
     const lvl = subject.levels[levelKey];
     if (!lvl) return;
     const isCurrent = levelKey === currentLevel;
-    const pct = lvl.total > 0 ? (lvl.mastered / lvl.total) * 100 : 0;
-    const dimStyle = !isCurrent && lvl.mastered === 0 ? `opacity:${0.4 - i * 0.05};` : (lvl.mastered === lvl.total ? 'opacity:0.65;' : '');
+    const topicsForLevel = subject.topics.filter(t => t.level === levelKey);
+    const mastered = topicsForLevel.filter(t => t.score >= 4).length;
+    const total = topicsForLevel.length;
+    const pct = total > 0 ? (mastered / total) * 100 : 0;
+    const dimStyle = !isCurrent && mastered === 0 ? `opacity:${0.4 - i * 0.05};` : (mastered === total ? 'opacity:0.65;' : '');
     const countColor = pct === 100 ? '#10b981' : pct > 0 ? '#eab308' : 'var(--text-faint)';
     const barGrad = pct === 100 ? 'linear-gradient(90deg,#10b981,#06b6d4)' : 'linear-gradient(90deg,#eab308,#f97316)';
-    const topicsForLevel = subject.topics.filter(t => t.level === levelKey);
 
     html += `
       <div class="level-row${isCurrent ? ' current' : ''}" style="${dimStyle}" data-level="${levelKey}" onclick="toggleLevel('${levelKey}')">
@@ -190,7 +192,7 @@ function renderProgress(subject, subjectKey) {
             ${isCurrent ? '<span class="level-badge">current</span>' : ''}
           </div>
           <div style="display:flex;align-items:center;gap:4px">
-            <span class="level-count" style="color:${countColor}">${lvl.mastered}/${lvl.total}</span>
+            <span class="level-count" style="color:${countColor}">${mastered}/${total}</span>
             <span class="level-expand-icon" id="icon-${levelKey}">${isCurrent ? '▼' : '▶'}</span>
           </div>
         </div>
