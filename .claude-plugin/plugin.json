@@ -1,6 +1,6 @@
 {
   "name": "learn",
-  "description": "Personal adaptive learning system with spaced repetition and 5 teaching methods. Commands: /learn (study session), /learn-dashboard (open HTML dashboard), /learn-obsidian (open knowledge base).",
+  "description": "Personal adaptive learning system with spaced repetition and 5 teaching methods. Commands: /learn (study session), /learn-dashboard (open HTML dashboard).",
   "author": {
     "name": "Vadim Kisilov",
     "email": "vadimk@wix.com"

@@ -58,7 +58,6 @@ Score changes are always explained aloud with specific reasoning.
 |---|---|
 | `/learn` | Start a study session — dashboard, subject selection, and learning in one flow |
 | `/learn-dashboard` | Open the progress dashboard in the browser |
-| `/learn-obsidian` | Open your topic knowledge base in Obsidian (installs Obsidian if needed) |
 
 ---
 
@@ -81,4 +80,4 @@ Restart Claude Code — `/learn` is ready.
 claude plugin update learn
 ```
 
-Your progress data lives in `~/.claude/plugins/data/learn/` — completely separate from the plugin and never touched by updates.
+Your progress data lives in a Supabase backend, not in the plugin directory — completely separate from the plugin and never touched by updates.
