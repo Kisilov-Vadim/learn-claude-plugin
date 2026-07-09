@@ -5,42 +5,86 @@ description: Personal adaptive learning assistant. Starts a study session using 
 
 # /learn
 
-## Data Location
+## API Access
 
-- `~/.claude/plugins/manual/learn/dashboard/data.js` — structured data (scores, history, method stats). Read and write directly.
-  - **Read:** parse JSON by stripping the JS wrapper: `content[len('window.LEARN_DATA = '):-1]`
-  - **Write:** wrap JSON in assignment: `'window.LEARN_DATA = ' + json.dumps(data, indent=2) + ';'`
-- `~/.claude/plugins/data/learn/subjects/{name}/curriculum.md` — full ordered topic plan
-- `~/.claude/plugins/data/learn/subjects/{name}/sessions.md` — append-only session log
-- `~/.claude/plugins/data/learn/subjects/{name}/topics/{topic-id}.md` — content notes, explanations, wikilinks
+All data operations use curl to call Supabase RPC functions. Never read or write local files directly.
+
+**At session start — run these two commands:**
+
+```bash
+# 1. Get fresh access token (silent, ~200ms)
+USER_TOKEN=$(node ~/.claude/plugins/manual/learn/scripts/auth.js token)
+
+# 2. Fetch schema — know all available entity fields, enums, and operations
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_schema" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK"
+```
+
+**API call pattern (all operations):**
+```bash
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/<function_name>" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '<json params>'
+```
+
+**First-time setup (user runs once):**
+```bash
+node ~/.claude/plugins/manual/learn/scripts/auth.js signup
+node ~/.claude/plugins/manual/learn/scripts/auth.js login
+```
 
 ## On Invocation
 
-1. Read `~/.claude/plugins/manual/learn/dashboard/data.js`
-2. Display dashboard:
-   - Each active subject: completion %, current level, streak, topics due today
-   - If no subjects yet: "No subjects yet. What do you want to learn?"
-3. Ask: "Which subject? (or add a new one)"
+1. Get token and fetch schema (two commands from API Access section above)
+2. Call `get_dashboard`:
+   ```bash
+   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_dashboard" \
+     -H "Authorization: Bearer $USER_TOKEN" \
+     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK"
+   ```
+3. Display dashboard — each subject: completion %, current level, streak, dueToday count
+4. If no subjects: "No subjects yet. What do you want to learn?"
+5. Ask: "Which subject? (or add a new one)"
+6. Once subject selected, call `get_subject_context`:
+   ```bash
+   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_subject_context" \
+     -H "Authorization: Bearer $USER_TOKEN" \
+     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+     -H "Content-Type: application/json" \
+     -d '{"p_subject_id":"<id>"}'
+   ```
+7. Call `create_session` and store the session id:
+   ```bash
+   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/create_session" \
+     -H "Authorization: Bearer $USER_TOKEN" \
+     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+     -H "Content-Type: application/json" \
+     -d '{"p_subject_id":"<id>"}'
+   ```
 
 ## Session Decision Tree
 
 After subject is selected, run this automatically — never ask the user what mode to use:
 
 ```
-1. Topics with next_review <= today (use today's date)?
+1. dueTopics non-empty (next_review <= today)?
    YES → REVIEW PHASE: run Active Recall on all due topics, weakest score first
 
-2. No reviews due. Is there a topic with score 1–3 that was most recently started (score > 0, not yet at score 4)?
-   YES → PRACTICE PHASE: run Feynman on that topic
+2. No reviews due. nextUnstarted present (a not-started topic AT the subject's current_level)?
+   YES → LEARN PHASE: introduce it using the Teaching Toolkit
 
-3. Current topic score >= 3. There is a next unstarted topic in curriculum?
-   YES → LEARN PHASE: introduce next topic using Teaching Toolkit
+3. No new topic at this level. practiceCandidate present (lowest-score started topic with score < 4, not already touched today)?
+   YES → PRACTICE PHASE: run the toolkit-selected method on it
 
-4. All topics started. Any topic has score < 4?
-   YES → DEEP DIVE PHASE: pick lowest-score topic, run Deep Dive
+4. practiceCandidate empty (everything below 4 was already touched today). deepDiveCandidate present (lowest-score started topic, score < 4)?
+   YES → PRACTICE/DEEP-DIVE PHASE: work the lowest-score topic with the toolkit-selected method
 
-5. All topics score >= 4 and no reviews due today?
-   → Session complete: "You've covered everything for now. Next review due: [earliest next_review date across all topics]. Keep the streak going tomorrow!"
+5. All candidates empty (every topic at/above 4, or all touched today) and no reviews due?
+   → Consider a level bump (see Level Advancement). If none warranted:
+     "You've covered everything for now. Next review due: [earliest next_review date across all topics]. Keep the streak going tomorrow!"
 ```
 
 After completing each phase, check if there is time/energy to continue. Ask: "Keep going or stop here?"
@@ -78,7 +122,7 @@ Always explain score changes aloud: "Moving you to 3 because you got the core ri
 | 5 | Maintain | Active Recall only |
 
 **Layer 2 — Personalization** (picks within valid options):
-Read `methodEffectiveness` in data.js for this subject. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (touches = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
+Use `methodEffectiveness` from the `get_subject_context` response. Pick the method with highest `avgScoreDelta` that is not `retired: true`. If no history yet (touches = 0), use defaults: Socratic (0, 1), Active Recall (2, 3), Feynman (4), Active Recall (5).
 
 ### Stall Detection
 
@@ -86,7 +130,7 @@ If a topic has the same score across 2 consecutive touches using the same method
 
 ### Method Retirement
 
-Before choosing a method, check `methodEffectiveness` in data.js. Skip any method where `retired: true`.
+Before choosing a method, check `methodEffectiveness` from the `get_subject_context` response. Skip any method where `retired: true`.
 
 A method becomes retired when: `touches >= 10` AND `avgScoreDelta < 0.2`.
 
@@ -112,12 +156,12 @@ Write [[wikilinks]] to related topics in the topic .md file.
 
 ### Method: Reading + Socratic (score 0, 1)
 
-Use when: topic has resources listed in curriculum.md, OR topic is dense/nuanced (Senior/Principal level), OR topic requires real-world intuition.
+Use when: topic has resources listed (from `get_topic` response), OR topic is dense/nuanced (Senior/Principal level), OR topic requires real-world intuition.
 
 1. **Hook** — open with a problem question that the reading will answer. Do not assign reading yet.
    Example: "Imagine you have 10 servers and hash(key) % 10. One server dies — what happens to all your cached data?"
 2. **Wait** — let user think and respond. Acknowledge their answer.
-3. **Assign** — "Read [exact resource from curriculum.md], ~[N] min. Focus specifically on: [one key question from the hook]."
+3. **Assign** — "Read [exact resource from the topic's resources list], ~[N] min. Focus specifically on: [one key question from the hook]."
 4. **User reads and returns.**
 5. **Socratic debrief** — ask 3–4 questions specifically about what was read. Start with the hook question.
 6. **Feynman close** — "Now explain it to me in your own words."
@@ -171,39 +215,28 @@ Do this conversationally — it should feel like a technical chat, not an exam. 
 
 At the end, summarize: "Based on our conversation: [topic A] → score 4 (solid). [topic B] → score 2 (needs work). We'll start from there."
 
-**Step 3 — Generate curriculum:**
-Write `~/.claude/plugins/data/learn/subjects/{name}/curriculum.md` with the full skeleton plan:
+**Step 3 — Create subject and topics via API:**
 
-```
-# {Subject} Curriculum
-Goal: {stated goal}
-Starting level: {level}
+```bash
+# Create subject
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/create_subject" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_name":"<name>","p_goal":"<goal>","p_current_level":"<level>","p_target_level":"principal"}'
 
-## Beginner
-- topic-id: topic-name | prerequisites: none | resources: none
-- topic-id: topic-name | prerequisites: [topic-id] | resources: [DDIA ch.1]
-
-## Junior
-...
-
-## Middle
-...
-
-## Senior
-...
-
-## Principal
-...
+# Add each topic in curriculum order (one call per topic)
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/add_topic" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[]}'
 ```
 
 Rules for curriculum generation:
 - Order by dependency within each level (prerequisites before dependents)
 - Add resources only for dense topics (Senior/Principal level, or topics with known great sources)
-- Topics the user scored 4+ in diagnostic → mark as `status: mastered` in data.js, skip in sessions
-- Tailor topic selection to stated goal (e.g. FAANG interviews → include system design interview patterns)
-
-**Step 4 — Initialize data.js entry:**
-Add subject to `data.js` with all topics from curriculum, initial scores from diagnostic, `methodEffectiveness` all zeroed out, `streak: 0`, `lastUpdated: ""`
+- Topics the user scored 4+ in diagnostic → call `update_topic` immediately to set score and status: mastered
 
 **Step 5 — Start first session immediately.**
 
@@ -220,52 +253,43 @@ A topic is complete when:
 - Deep Dive: challenge worked through and scored
 
 **How to spawn the write subagent:**
-Use the Agent tool with `run_in_background: true`. Pass all session data needed to perform the three writes in the prompt — the subagent has no conversation context.
+Use the Agent tool with `run_in_background: true`. Pass `USER_TOKEN`, session id, and all topic data in the prompt — the subagent has no conversation context.
 
 Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
-**1. Update `dashboard/data.js`:**
-- Update topic: `score`, `nextReview`, `lastReviewed`, `reviewCount`, `bestMethod`, `status`
-- Append to topic's `history`: `{date, method, scoreBefore, scoreAfter, userSignals, effectiveness}`
-- Recalculate `methodEffectiveness` for the method used:
-  - New avgScoreDelta = ((oldAvg * oldTouches) + scoreDelta) / (oldTouches + 1)
-  - Increment touches count
-  - If touches >= 10 AND avgScoreDelta < 0.2 → set `retired: true`
-- Update global `methodEffectiveness` same way
-- Update `lastUpdated` to today's date
-- Recalculate streak: if lastUpdated was yesterday → streak+1, else if today → streak unchanged, else → streak=1
+The subagent runs these three curl commands:
 
-**2. Append to `subjects/{name}/sessions.md`:**
+```bash
+# 1. Record the touch
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/add_touch" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_session_id":"<id>","p_topic_id":"<id>","p_subject_id":"<id>","p_method":"<method>","p_score_before":<n>,"p_score_after":<n>,"p_effectiveness":"<high|medium|low>","p_agent_comment":"<what they got right, what gap appeared>"}'
 
-Each `## YYYY-MM-DD` heading is a **session** (one day of learning). Each block below it is a **touch** (one topic reviewed). Append a new touch block under the existing date heading if it already exists, otherwise create a new date heading.
+# 2. Update topic state
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_topic" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_topic_id":"<id>","p_patch":{"score":<n>,"status":"<status>","nextReview":"<YYYY-MM-DD>","lastReviewed":"<YYYY-MM-DD>","bestMethod":"<method>","reviewCount":<n>}}'
 
+# 3. Update method effectiveness
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_methods" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_subject_id":"<id>","p_method":"<method>","p_score_delta":<scoreAfter - scoreBefore>}'
 ```
-## {YYYY-MM-DD}
 
-**Topic:** {topic name}
-**Method:** {method name}
-**Score:** {before} → {after}
-**Next review:** {date}
-**User signals:** {what they got right, what gap appeared}
-**Method effectiveness:** {high / medium / low}
+When user says "stop", call `end_session`:
+```bash
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/end_session" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_session_id":"<id>"}'
 ```
-
-**3. Update `subjects/{name}/topics/{topic-id}.md`:**
-If Feynman explanation was given in this session:
-
-# {Topic Name}
-
-## My Explanation ({date})
-{user's Feynman explanation verbatim or paraphrased}
-
-## Key Points
-- {point 1}
-- {point 2}
-
-## Related
-- [[topic-id]] — {why related}
-
-If file already exists: append new explanation with date header, update Key Points.
 
 ---
 
@@ -277,10 +301,17 @@ If file already exists: append new explanation with date header, update Key Poin
 > "This will permanently delete all progress for [subject] ([N] topics, [N] sessions, [N] touches). Are you sure?"
 
 On confirmation:
-1. Delete `subjects/{name}/` folder and all contents
-2. Remove subject entry from `dashboard/data.js` and update `lastUpdated`
+```bash
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/delete_subject" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_subject_id":"<id>"}'
+```
 
-**Deleting all subjects:** Same confirmation pattern, delete all subject folders, reset `subjects` to `{}` in `data.js`.
+Cascades automatically — topics, sessions, touches, method_effectiveness all deleted.
+
+**Deleting all subjects:** Same confirmation pattern, call `delete_subject` for each.
 
 ---
 
