@@ -297,6 +297,22 @@ curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/end_sessio
 
 **Switching subjects:** User says "switch to [subject]" or "let's do [subject] today" → complete current session writes, then load new subject and run decision tree.
 
+**Advancing a level:** The subject's `current_level` controls which not-started topics the LEARN phase serves. It does not advance on its own. Suggest a bump when most topics at the current level are score ≥ 4 and the user is handling them fluently. Always confirm before writing:
+
+> "You're consistently solid on the [current_level] topics. Want me to move you up to [next_level]? New topics will start coming from there."
+
+On confirmation, call `update_subject`:
+
+```bash
+curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_subject" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
+  -H "Content-Type: application/json" \
+  -d '{"p_subject_id":"<id>","p_patch":{"currentLevel":"<next_level>"}}'
+```
+
+Never bump silently, and never bump more than one level at a time. Levels in order: beginner → junior → middle → senior → principal.
+
 **Deleting a subject:** User says "clear [subject]" or "delete [subject]" → always confirm first:
 > "This will permanently delete all progress for [subject] ([N] topics, [N] sessions, [N] touches). Are you sure?"
 
