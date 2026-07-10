@@ -30,11 +30,11 @@ curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/<function_
   -d '<json params>'
 ```
 
-**First-time setup (user runs once):**
+**If token fetch fails (not logged in):** Run web-login automatically — do NOT ask the user to do it manually:
 ```bash
 node ~/.claude/plugins/manual/learn/scripts/auth.js web-login
 ```
-This opens the dashboard in the browser. Log in there — the CLI captures the token automatically. If you don't have an account yet, run `node auth.js signup` first.
+This opens the dashboard in the browser. The CLI captures the token automatically once they log in. Then re-run the token fetch and continue. If they don't have an account yet, run `node auth.js signup` first (also automatically, without asking).
 
 ## On Invocation
 
