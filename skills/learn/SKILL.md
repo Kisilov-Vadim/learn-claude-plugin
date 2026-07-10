@@ -76,6 +76,33 @@ After subject is selected, run this automatically — never ask the user what mo
 
 After completing each phase, check if there is time/energy to continue. Ask: "Keep going or stop here?"
 
+## Before Each Touch: Load the Topic's Real History
+
+Once the decision tree picks a topic, don't jump straight to a method. `get_subject_context`'s `dueTopics`/`practiceCandidate`/etc. only give you id, name, score, and level — not enough to teach well. Load the full topic first:
+
+```bash
+DATA='{"p_topic_id":"<id>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Loading <topic> details..." "get_topic" "$DATA"
+```
+
+This returns the topic's `resources` (see Resources below) and a `touches` array — its last several touches, each with `method`, `scoreBefore`/`scoreAfter`, `effectiveness`, `agentComment`, and `createdAt`. The `agentComment` is the real signal, not just the score: a score can tick up while the comment still says "doesn't grasp the eviction mechanism at all," or a method that looks fine in the subject-wide `methodEffectiveness` aggregate might have flopped specifically on this topic. Skip this history check only for a topic's first-ever touch (`touches` empty) — there's nothing to read yet.
+
+Use what you find to decide how to open:
+- **Comments point to near-zero grasp of the fundamentals** (repeated blanks, or a note that a prerequisite concept is missing) → don't open with Socratic questioning cold. Point to a resource first (see Resources below), let them read, then continue.
+- **Same score and same method on the last 2 touches** → this is Stall Detection (see below) — force a different valid method from Layer 1 regardless of what the aggregate effectiveness says.
+- **A comment names a specific recurring gap** → open by addressing that gap directly instead of restarting from the beginning.
+
+This applies in every phase — review, learn, practice, and deep-dive — not just reviews.
+
+## Resources
+
+Topics carry an optional `resources` list (part of the `get_topic` response above) — articles, docs, or videos. These aren't exclusive to the Reading + Socratic method; use them wherever they help:
+
+- Check the `resources` list every time you load a topic.
+- Suggest a specific one (with a reason, e.g. "this covers the eviction tradeoffs you keep missing") when: the score is 0/1 and a resource exists, the topic is dense (Senior/Principal level), or the touch history above shows a repeated stall on the same gap.
+- Don't dump the whole list — recommend the one that fits what's actually missing.
+- If a topic has no resources and the user keeps stalling on it, that's a gap worth fixing later — see New Subject Intake for how resources get populated when topics are created.
+
 ## Score System
 
 | Score | Meaning | Next review |
@@ -210,13 +237,13 @@ DATA='{"p_name":"<name>","p_goal":"<goal>","p_current_level":"<level>","p_target
 ~/.claude/plugins/manual/learn/scripts/api.sh "Creating <name> subject..." "create_subject" "$DATA"
 
 # Add each topic in curriculum order (one call per topic)
-DATA='{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[]}'
+DATA='{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[{"url":"<url>","type":"article","title":"<title>"}]}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Adding topic: <topic>..." "add_topic" "$DATA"
 ```
 
 Rules for curriculum generation:
 - Order by dependency within each level (prerequisites before dependents)
-- Add resources only for dense topics (Senior/Principal level, or topics with known great sources)
+- Research and fill in 1–3 real resources per topic before calling `add_topic` — use WebSearch if you're not already confident of a good source. Don't default to an empty `p_resources` list. Dense topics (Senior/Principal level, or ones that hinge on real-world intuition) need this most, but every topic benefits from at least one solid reference to fall back on when a user stalls on it later.
 - Topics the user scored 4+ in diagnostic → call `update_topic` immediately to set score and status: mastered
 
 **Step 5 — Start first session immediately.**
