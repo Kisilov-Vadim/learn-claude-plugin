@@ -7,62 +7,49 @@ description: Personal adaptive learning assistant. Starts a study session using 
 
 ## API Access
 
-All data operations use curl to call Supabase RPC functions. Never read or write local files directly.
+All data operations call Supabase RPC via the wrapper script. Never read or write local files directly. Never use raw curl commands.
 
-**At session start — run these two commands:**
-
+**Wrapper script — handles auth internally, prints a human message:**
 ```bash
-# 1. Get fresh access token (silent, ~200ms)
-USER_TOKEN=$(node ~/.claude/plugins/manual/learn/scripts/auth.js token)
+# With no body params:
+~/.claude/plugins/manual/learn/scripts/api.sh "<message>" "<function>"
 
-# 2. Fetch schema — know all available entity fields, enums, and operations
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_schema" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK"
+# With a JSON body (always store JSON in a variable first):
+DATA='{"p_subject_id":"<id>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "<message>" "<function>" "$DATA"
 ```
 
-**API call pattern (all operations):**
-```bash
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/<function_name>" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '<json params>'
-```
+The script fetches a fresh token automatically on every call (~200ms). No USER_TOKEN variable needed.
 
-**If token fetch fails (not logged in):** Run web-login automatically — do NOT ask the user to do it manually:
+**If the script reports "Not logged in":** Run web-login automatically — do NOT ask the user:
 ```bash
 node ~/.claude/plugins/manual/learn/scripts/auth.js web-login
 ```
-This opens the dashboard in the browser. The CLI captures the token automatically once they log in. Then re-run the token fetch and continue. If they don't have an account yet, run `node auth.js signup` first (also automatically, without asking).
+This opens the dashboard in the browser. The CLI captures the token automatically once they log in. Then retry the api.sh call. If they don't have an account yet, run `node auth.js signup` first (also automatically).
+
+**Bash tool description field:** Always write a short human label — it's what the user sees. Examples: "Load dashboard", "Start session", "Save progress on [topic]", "Record touch".
 
 ## On Invocation
 
-1. Get token and fetch schema (two commands from API Access section above)
-2. Call `get_dashboard`:
+1. Fetch schema and dashboard in parallel:
    ```bash
-   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_dashboard" \
-     -H "Authorization: Bearer $USER_TOKEN" \
-     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK"
+   ~/.claude/plugins/manual/learn/scripts/api.sh "Loading available operations..." "get_schema"
    ```
-3. Display dashboard — each subject: completion %, current level, streak, dueToday count
-4. If no subjects: "No subjects yet. What do you want to learn?"
-5. Ask: "Which subject? (or add a new one)"
-6. Once subject selected, call `get_subject_context`:
    ```bash
-   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/get_subject_context" \
-     -H "Authorization: Bearer $USER_TOKEN" \
-     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-     -H "Content-Type: application/json" \
-     -d '{"p_subject_id":"<id>"}'
+   ~/.claude/plugins/manual/learn/scripts/api.sh "Checking your subjects and sessions..." "get_dashboard"
    ```
-7. Call `create_session` and store the session id:
+2. Display dashboard — each subject: completion %, current level, streak, dueToday count
+3. If no subjects: "No subjects yet. What do you want to learn?"
+4. Ask: "Which subject? (or add a new one)"
+5. Once subject selected, load context:
    ```bash
-   curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/create_session" \
-     -H "Authorization: Bearer $USER_TOKEN" \
-     -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-     -H "Content-Type: application/json" \
-     -d '{"p_subject_id":"<id>"}'
+   DATA='{"p_subject_id":"<id>"}'
+   ~/.claude/plugins/manual/learn/scripts/api.sh "Loading <subject> curriculum and progress..." "get_subject_context" "$DATA"
+   ```
+6. Start a session and store the session id:
+   ```bash
+   DATA='{"p_subject_id":"<id>"}'
+   ~/.claude/plugins/manual/learn/scripts/api.sh "Starting new session..." "create_session" "$DATA"
    ```
 
 ## Session Decision Tree
@@ -219,18 +206,12 @@ At the end, summarize: "Based on our conversation: [topic A] → score 4 (solid)
 
 ```bash
 # Create subject
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/create_subject" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_name":"<name>","p_goal":"<goal>","p_current_level":"<level>","p_target_level":"principal"}'
+DATA='{"p_name":"<name>","p_goal":"<goal>","p_current_level":"<level>","p_target_level":"principal"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Creating <name> subject..." "create_subject" "$DATA"
 
 # Add each topic in curriculum order (one call per topic)
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/add_topic" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[]}'
+DATA='{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[]}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Adding topic: <topic>..." "add_topic" "$DATA"
 ```
 
 Rules for curriculum generation:
@@ -253,42 +234,30 @@ A topic is complete when:
 - Deep Dive: challenge worked through and scored
 
 **How to spawn the write subagent:**
-Use the Agent tool with `run_in_background: true`. Pass `USER_TOKEN`, session id, and all topic data in the prompt — the subagent has no conversation context.
+Use the Agent tool with `run_in_background: true`. Pass session id, topic id, subject id, method, scores, effectiveness, and agent comment in the prompt — the subagent has no conversation context.
 
 Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
-The subagent runs these three curl commands:
+The subagent runs these three commands:
 
 ```bash
 # 1. Record the touch
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/add_touch" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_session_id":"<id>","p_topic_id":"<id>","p_subject_id":"<id>","p_method":"<method>","p_score_before":<n>,"p_score_after":<n>,"p_effectiveness":"<high|medium|low>","p_agent_comment":"<what they got right, what gap appeared>"}'
+DATA='{"p_session_id":"<id>","p_topic_id":"<id>","p_subject_id":"<id>","p_method":"<method>","p_score_before":<n>,"p_score_after":<n>,"p_effectiveness":"<high|medium|low>","p_agent_comment":"<what they got right, what gap appeared>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Recording touch on <topic>..." "add_touch" "$DATA"
 
 # 2. Update topic state
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_topic" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_topic_id":"<id>","p_patch":{"score":<n>,"status":"<status>","nextReview":"<YYYY-MM-DD>","lastReviewed":"<YYYY-MM-DD>","bestMethod":"<method>","reviewCount":<n>}}'
+DATA='{"p_topic_id":"<id>","p_patch":{"score":<n>,"status":"<status>","nextReview":"<YYYY-MM-DD>","lastReviewed":"<YYYY-MM-DD>","bestMethod":"<method>","reviewCount":<n>}}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Updating <topic> score to <n>..." "update_topic" "$DATA"
 
 # 3. Update method effectiveness
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_methods" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_subject_id":"<id>","p_method":"<method>","p_score_delta":<scoreAfter - scoreBefore>}'
+DATA='{"p_subject_id":"<id>","p_method":"<method>","p_score_delta":<scoreAfter - scoreBefore>}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Updating method effectiveness..." "update_methods" "$DATA"
 ```
 
 When user says "stop", call `end_session`:
 ```bash
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/end_session" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_session_id":"<id>"}'
+DATA='{"p_session_id":"<id>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Saving session summary..." "end_session" "$DATA"
 ```
 
 ---
@@ -301,14 +270,10 @@ curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/end_sessio
 
 > "You're consistently solid on the [current_level] topics. Want me to move you up to [next_level]? New topics will start coming from there."
 
-On confirmation, call `update_subject`:
-
+On confirmation:
 ```bash
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/update_subject" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_subject_id":"<id>","p_patch":{"currentLevel":"<next_level>"}}'
+DATA='{"p_subject_id":"<id>","p_patch":{"currentLevel":"<next_level>"}}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Advancing to <next_level> level..." "update_subject" "$DATA"
 ```
 
 Never bump silently, and never bump more than one level at a time. Levels in order: beginner → junior → middle → senior → principal.
@@ -318,11 +283,8 @@ Never bump silently, and never bump more than one level at a time. Levels in ord
 
 On confirmation:
 ```bash
-curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/delete_subject" \
-  -H "Authorization: Bearer $USER_TOKEN" \
-  -H "apikey: sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK" \
-  -H "Content-Type: application/json" \
-  -d '{"p_subject_id":"<id>"}'
+DATA='{"p_subject_id":"<id>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Deleting <subject> and all progress..." "delete_subject" "$DATA"
 ```
 
 Cascades automatically — topics, sessions, touches, method_effectiveness all deleted.
