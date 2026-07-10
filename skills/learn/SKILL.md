@@ -32,9 +32,9 @@ curl -s -X POST "https://wmbtdzlcqgdfqdxvaqeb.supabase.co/rest/v1/rpc/<function_
 
 **First-time setup (user runs once):**
 ```bash
-node ~/.claude/plugins/manual/learn/scripts/auth.js signup
-node ~/.claude/plugins/manual/learn/scripts/auth.js login
+node ~/.claude/plugins/manual/learn/scripts/auth.js web-login
 ```
+This opens the dashboard in the browser. Log in there — the CLI captures the token automatically. If you don't have an account yet, run `node auth.js signup` first.
 
 ## On Invocation
 
