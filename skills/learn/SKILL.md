@@ -56,6 +56,8 @@ This opens the dashboard in the browser. The CLI captures the token automaticall
 
 After subject is selected, run this automatically — never ask the user what mode to use:
 
+**Note: topics with `status = "completed"` are excluded from all phases below.**
+
 ```
 1. dueTopics non-empty (next_review <= today)?
    YES → REVIEW PHASE: run Active Recall on all due topics, weakest score first
@@ -63,13 +65,13 @@ After subject is selected, run this automatically — never ask the user what mo
 2. No reviews due. nextUnstarted present (a not-started topic AT the subject's current_level)?
    YES → LEARN PHASE: introduce it using the Teaching Toolkit
 
-3. No new topic at this level. practiceCandidate present (lowest-score started topic with score < 4, not already touched today)?
+3. No new topic at this level. practiceCandidate present (lowest-score started topic with score < desiredScore, not already touched today)?
    YES → PRACTICE PHASE: run the toolkit-selected method on it
 
-4. practiceCandidate empty (everything below 4 was already touched today). deepDiveCandidate present (lowest-score started topic, score < 4)?
+4. practiceCandidate empty (everything below desiredScore was already touched today). deepDiveCandidate present (lowest-score started topic, score < desiredScore)?
    YES → PRACTICE/DEEP-DIVE PHASE: work the lowest-score topic with the toolkit-selected method
 
-5. All candidates empty (every topic at/above 4, or all touched today) and no reviews due?
+5. All candidates empty (every topic at/above desiredScore, or all touched today) and no reviews due?
    → Consider a level bump (see Level Advancement). If none warranted:
      "You've covered everything for now. Next review due: [earliest next_review date across all topics]. Keep the streak going tomorrow!"
 ```
@@ -112,7 +114,7 @@ Topics carry an optional `resources` list (part of the `get_topic` response abov
 | 2 | Partial understanding | +3 days |
 | 3 | Understood but shaky | +7 days |
 | 4 | Solid, minor gaps | +14 days |
-| 5 | Mastered | +30 days |
+| 5 | Mastered | +30 days (→ completed if desiredScore = 5) |
 
 **Score update rules:**
 - Good recall, solid explanation → score +1 (max 5)
@@ -237,6 +239,7 @@ DATA='{"p_name":"<name>","p_goal":"<goal>","p_current_level":"<level>","p_target
 ~/.claude/plugins/manual/learn/scripts/api.sh "Creating <name> subject..." "create_subject" "$DATA"
 
 # Add each topic in curriculum order (one call per topic)
+# p_desired_score is optional — omit to default to 5
 DATA='{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequisites":[],"p_resources":[{"url":"<url>","type":"article","title":"<title>"}]}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Adding topic: <topic>..." "add_topic" "$DATA"
 ```
@@ -244,9 +247,34 @@ DATA='{"p_subject_id":"<id>","p_name":"<topic>","p_level":"<level>","p_prerequis
 Rules for curriculum generation:
 - Order by dependency within each level (prerequisites before dependents)
 - Research and fill in 1–3 real resources per topic before calling `add_topic` — use WebSearch if you're not already confident of a good source. Don't default to an empty `p_resources` list. Dense topics (Senior/Principal level, or ones that hinge on real-world intuition) need this most, but every topic benefits from at least one solid reference to fall back on when a user stalls on it later.
-- Topics the user scored 4+ in diagnostic → call `update_topic` immediately to set score and status: mastered
+- Topics the user scored 4+ in diagnostic → call `update_topic` immediately to set score and status: `completed`
 
 **Step 5 — Start first session immediately.**
+
+---
+
+## Desired Score Management
+
+`desiredScore` is the score the user wants to reach for a topic (1–5, default 5). The API enforces that `score <= desiredScore` at all times — you don't need to police this yourself, a rejected call means the patch was invalid.
+
+**After scoring a topic** — before spawning writes, check if `scoreAfter >= topic.desiredScore`:
+- If `scoreAfter >= desiredScore` and `desiredScore < 5`:
+  > "You've hit your goal of [N] on [topic name]! Want to raise the target to [N+1] and keep going, or mark it completed?"
+  - "Raise it" → include `"desiredScore": N+1` in the `update_topic` patch
+  - "Mark completed" → include `"status": "completed"` in the patch (no score change)
+- If `scoreAfter >= desiredScore` and `desiredScore == 5`:
+  > "You've fully mastered [topic] — marking it completed."
+  → include `"status": "completed"` in the patch, no question needed
+
+**User lowers their goal mid-session** (e.g. "score 3 is enough for this topic", "mark this one as done"):
+```bash
+DATA='{"p_topic_id":"<id>","p_patch":{"desiredScore":<n>}}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Updating desired score for <topic>..." "update_topic" "$DATA"
+```
+If the API accepts it (current score <= new desiredScore), then immediately ask: "Your current score is already [N] — want me to mark it completed now?"
+
+**User wants to reopen a completed topic** (e.g. "I want to go deeper on X"):
+→ Patch both `desiredScore` (raise it) and `status: "learning"` in one call.
 
 ---
 
@@ -261,7 +289,7 @@ A topic is complete when:
 - Deep Dive: challenge worked through and scored
 
 **How to spawn the write subagent:**
-Use the Agent tool with `run_in_background: true`. Pass session id, topic id, subject id, method, scores, effectiveness, and agent comment in the prompt — the subagent has no conversation context.
+Use the Agent tool with `run_in_background: true`. Pass session id, topic id, subject id, method, scores, effectiveness, agent comment, and any desiredScore/status changes in the prompt — the subagent has no conversation context.
 
 Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
@@ -272,7 +300,7 @@ The subagent runs these three commands:
 DATA='{"p_session_id":"<id>","p_topic_id":"<id>","p_subject_id":"<id>","p_method":"<method>","p_score_before":<n>,"p_score_after":<n>,"p_effectiveness":"<high|medium|low>","p_agent_comment":"<what they got right, what gap appeared>"}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Recording touch on <topic>..." "add_touch" "$DATA"
 
-# 2. Update topic state
+# 2. Update topic state (include desiredScore and/or status:"completed" if changed)
 DATA='{"p_topic_id":"<id>","p_patch":{"score":<n>,"status":"<status>","nextReview":"<YYYY-MM-DD>","lastReviewed":"<YYYY-MM-DD>","bestMethod":"<method>","reviewCount":<n>}}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Updating <topic> score to <n>..." "update_topic" "$DATA"
 
@@ -328,3 +356,4 @@ Cascades automatically — topics, sessions, touches, method_effectiveness all d
 4. Never lecture unprompted — ask first, explain second
 5. Writes happen automatically after each topic completes — if user says "stop" mid-topic, run the writes for whatever was completed before stopping
 6. If user asks about a topic not in curriculum → answer, then ask if they want to add it to the curriculum
+7. Never set score > desiredScore or desiredScore < score — the API will reject it. If a user request would violate this, explain the constraint and offer valid alternatives.
