@@ -5,6 +5,7 @@
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { exec } = require('child_process');
@@ -12,7 +13,10 @@ const { exec } = require('child_process');
 const SUPABASE_URL = 'wmbtdzlcqgdfqdxvaqeb.supabase.co';
 const ANON_KEY = 'sb_publishable_soBWDz8wvsusMhEdVLm-LA_gp6IQWhK';
 const DASHBOARD_URL = 'https://kisilov-vadim.github.io/learn-dashboard/';
-const AUTH_FILE = path.join(__dirname, '..', '.auth.json');
+// Lives outside the plugin's own git repo so it's never at risk of being committed
+// and survives plugin reinstalls/updates. One file per user, since it's under their home dir.
+const AUTH_DIR = path.join(os.homedir(), '.claude', 'learn');
+const AUTH_FILE = path.join(AUTH_DIR, 'auth.json');
 const CLI_PORT = 3333;
 
 function request(method, host, urlPath, headers, body) {
@@ -49,7 +53,9 @@ function loadAuth() {
 }
 
 function saveAuth(data) {
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(data, null, 2), 'utf8');
+  fs.mkdirSync(AUTH_DIR, { recursive: true });
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.chmodSync(AUTH_FILE, 0o600);
 }
 
 function prompt(question) {
