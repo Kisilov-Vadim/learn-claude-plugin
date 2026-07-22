@@ -306,7 +306,7 @@ Use the Agent tool with `run_in_background: true`. Pass session id, topic id, su
 
 Do not announce the write to the user. Ask "Keep going or stop here?" immediately after spawning the subagent.
 
-The subagent runs these three commands:
+The subagent runs these four commands:
 
 ```bash
 # 1. Record the touch
@@ -320,9 +320,13 @@ DATA='{"p_topic_id":"<id>","p_patch":{"score":<n>,"status":"<status>","nextRevie
 # 3. Update method effectiveness
 DATA='{"p_subject_id":"<id>","p_method":"<method>","p_score_delta":<scoreAfter - scoreBefore>}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Updating method effectiveness..." "update_methods" "$DATA"
+
+# 4. Update session end time (keeps it current in case the user closes Claude without saying "stop")
+DATA='{"p_session_id":"<id>"}'
+~/.claude/plugins/manual/learn/scripts/api.sh "Updating session end time..." "end_session" "$DATA"
 ```
 
-When user says "stop", call `end_session`:
+When user says "stop", call `end_session` explicitly (in addition to the automatic per-touch update above):
 ```bash
 DATA='{"p_session_id":"<id>"}'
 ~/.claude/plugins/manual/learn/scripts/api.sh "Saving session summary..." "end_session" "$DATA"
